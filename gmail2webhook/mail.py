@@ -37,7 +37,7 @@ def markdown_text(text):
         raw = raw.rstrip("]}")
         url = link_url(raw)
         result.append(escape_markdown(text[position:match.start()]))
-        result.append(f"<{url}>" if url else escape_markdown(raw))
+        result.append(raw if url else escape_markdown(raw))
         result.append(escape_markdown(match.group()[len(raw):]))
         position = match.end()
     result.append(escape_markdown(text[position:]))
@@ -57,7 +57,10 @@ class TextHTML(HTMLParser):
             label = re.sub(r"\s+", " ", "".join(label)).strip()
             url = link_url(href)
             if url:
-                self.text.append(f"[{escape_markdown(label or href)}](<{url}>)")
+                if not label or label == href.strip() or link_url(label) == url:
+                    self.text.append(href.strip())
+                else:
+                    self.text.append(f"[{escape_markdown(label)}](<{url}>)")
             else:
                 self.text.append(escape_markdown(label))
             self.anchor = None
@@ -155,7 +158,7 @@ def body_text(message, attachment_loader):
 def chunks(text, limit, keep_links=False):
     result, current, size = [], [], 0
     # Keep generated Markdown links together when they fit within one embed.
-    pattern = r'(\[(?:\\.|[^\]\\\n])*\]\(<https?://[^>\n]+>\)|<https?://[^>\n]+>)'
+    pattern = r'(\[(?:\\.|[^\]\\\n])*\]\(<https?://[^>\n]+>\)|https?://[^\s<>]+)'
     segments = re.split(pattern, text) if keep_links else [text]
     tokens = (token for i, segment in enumerate(segments)
               for token in ([segment] if keep_links and i % 2 and len(segment.encode("utf-16-le")) // 2 <= limit else segment))

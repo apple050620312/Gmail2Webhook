@@ -64,6 +64,7 @@ def run_once(config, state, session, service_factory=service_for):
         try:
             service = service_factory(account)
             senders = tuple(dict.fromkeys(s for route in account.routes for s in route.senders))
+            queued = []
             for message_id in message_ids(service, senders):
                 pending = [r for r in account.routes if not state.done((account.id, r.id, message_id))]
                 if not pending:
@@ -73,6 +74,13 @@ def run_once(config, state, session, service_factory=service_for):
                     matching = [r for r in pending if sender(message) in r.senders]
                     if not matching:
                         continue
+                    queued.append((int(message["internalDate"]), message_id, message, matching))
+                except Exception as exc:
+                    failures += 1
+                    log.error("Message failed account=%s message=%s error=%s", account.id, message_id, type(exc).__name__)
+            # Gmail search order is newest first; collect every page before sending.
+            for _, message_id, message, matching in sorted(queued, key=lambda item: (item[0], item[1])):
+                try:
                     def load_attachment(attachment_id):
                         return service.users().messages().attachments().get(userId="me", messageId=message_id, id=attachment_id).execute(num_retries=3)["data"]
                     parts = list(payloads(account, message, body_text(message, load_attachment)))
