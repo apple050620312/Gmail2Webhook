@@ -8,8 +8,8 @@
       "credentials_file": "secrets/client_secret.json",
       "token_file": "secrets/personal-token.json",
       "routes": [
-        {"id": "orders", "senders": ["orders@example.com", "billing@example.com"], "webhook_env": "DISCORD_ORDERS_WEBHOOK"},
-        {"id": "alerts", "senders": ["alerts@example.com"], "webhook_env": "DISCORD_ALERTS_WEBHOOK"}
+        {"id": "orders", "senders": ["orders@example.com", "billing@example.com"], "webhook_url": "https://discord.com/api/webhooks/123/replace-with-your-token"},
+        {"id": "alerts", "senders": ["alerts@example.com"], "webhook_url": "https://discord.com/api/webhooks/456/replace-with-your-token"}
       ]
     },
     {
@@ -18,7 +18,7 @@
       "credentials_file": "secrets/client_secret.json",
       "token_file": "secrets/work-token.json",
       "routes": [
-        {"id": "work-mail", "senders": ["boss@example.com"], "webhook_env": "DISCORD_WORK_WEBHOOK"}
+        {"id": "work-mail", "senders": ["boss@example.com"], "webhook_url": "https://discord.com/api/webhooks/789/replace-with-your-token"}
       ]
     }
   ]
