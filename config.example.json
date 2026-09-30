@@ -1,0 +1,25 @@
+{
+  "poll_interval_seconds": 60,
+  "state_db": "data/state.sqlite3",
+  "accounts": [
+    {
+      "id": "personal",
+      "email": "your-personal@gmail.com",
+      "credentials_file": "secrets/client_secret.json",
+      "token_file": "secrets/personal-token.json",
+      "routes": [
+        {"id": "orders", "senders": ["orders@example.com", "billing@example.com"], "webhook_env": "DISCORD_ORDERS_WEBHOOK"},
+        {"id": "alerts", "senders": ["alerts@example.com"], "webhook_env": "DISCORD_ALERTS_WEBHOOK"}
+      ]
+    },
+    {
+      "id": "work",
+      "email": "your-work@gmail.com",
+      "credentials_file": "secrets/client_secret.json",
+      "token_file": "secrets/work-token.json",
+      "routes": [
+        {"id": "work-mail", "senders": ["boss@example.com"], "webhook_env": "DISCORD_WORK_WEBHOOK"}
+      ]
+    }
+  ]
+}

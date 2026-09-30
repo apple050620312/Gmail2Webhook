@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gmail2webhook"
+version = "1.0.0"
+description = "Forward selected Gmail senders to Discord embeds across multiple accounts"
+requires-python = ">=3.11"
+dependencies = ["google-api-python-client>=2.150,<3", "google-auth-oauthlib>=1.2,<2", "requests>=2.32,<3"]
+
+[project.scripts]
+gmail2webhook = "gmail2webhook.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
