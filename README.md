@@ -98,8 +98,6 @@ python main.py run
 # 指定設定檔
 python main.py --config another-config.json run
 
-# 本機測試，不讀取真實 Gmail 或發送 Discord 訊息
-python -m unittest discover -s tests -v
 ```
 
 Google External / Testing 的 Gmail refresh token 通常 7 天後失效。重新在自己的電腦執行 `authorize`，停止 Panel 服務、上傳新的 token，再啟動。長期使用需適當設定 Google 應用程式發布狀態與要求的驗證流程。錯誤紀錄只顯示錯誤類型，避免洩漏憑證。
