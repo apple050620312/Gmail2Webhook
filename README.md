@@ -82,7 +82,7 @@ python main.py authorize --account personal
 
 首次會同步 **指定寄件人的所有歷史郵件**，包含已讀、封存、垃圾郵件及垃圾桶。後續輪詢取得所有 Gmail 分頁，核對 `From` 完整地址（不區分大小寫），透過 SQLite 跳過已送達的帳號／路由／信件；不會修改信件或標記已讀。每輪完整掃描，大信箱同步較久且增加 API 用量。
 
-Discord embed 包含主旨、帳號、寄件人、收件人、日期及內文；長內文自動分段，重啟後從未送達段落繼續。HTML 轉文字、優先使用純文字內文，沒有文字時使用 Gmail snippet；檔案附件不會上傳。過長的主旨及 metadata 會截短。郵件內的 mention 不會 ping Discord 使用者。
+Discord embed 包含主旨、寄件人、收件人及內文，日期放在 footer，不顯示 Gmail ID 或帳號欄位。長內文自動分段，重啟後從未送達段落繼續。內文的連續空白／tab 合併為一個空白，移除行首尾空白，段落間最多保留一個空行。有 HTML 版本時優先使用，將網頁連結轉成 Discord Markdown `[文字](<網址>)`，純文字中的 HTTP／HTTPS 網址也可點擊；一般長度的連結不會跨 embed 拆開。HTML 轉成可讀文字，忽略 script／style，沒有文字時使用 Gmail snippet；檔案附件不會上傳。過長的主旨及 metadata 會截短。郵件內的 mention 不會 ping Discord 使用者。
 
 Gmail 暫時性 API 錯誤、Discord 限流／伺服器錯誤會重試，單一帳號或路由錯誤不會中止其他帳號。正常重啟可去重；若 Discord 已收件但回應遺失或程式在記錄前中斷，仍可能重複發送。建議只啟動一個實例。
 

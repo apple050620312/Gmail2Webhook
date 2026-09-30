@@ -3,6 +3,45 @@ import html
 import re
 from email.utils import parseaddr
 from html.parser import HTMLParser
+from urllib.parse import quote, urlsplit
+
+
+def clean_whitespace(text):
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[^\S\n]+", " ", text)
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def escape_markdown(text):
+    return re.sub(r'([\\`*_~|>\[\]])', r'\\\1', text).replace("@", "@\u200b")
+
+
+def link_url(url):
+    try:
+        parsed = urlsplit(url.strip())
+        if parsed.scheme.lower() in ("http", "https") and parsed.hostname:
+            return quote(url.strip(), safe=":/?#@!$&'+,;=%-._~")
+    except ValueError:
+        pass
+    return None
+
+
+def markdown_text(text):
+    """Escape mail formatting while keeping ordinary web URLs clickable."""
+    result, position = [], 0
+    for match in re.finditer(r"https?://[^\s<>]+", text, re.I):
+        raw = match.group().rstrip(".,;!?:\"'，。；！")
+        while raw.endswith(")") and raw.count(")") > raw.count("("):
+            raw = raw[:-1]
+        raw = raw.rstrip("]}")
+        url = link_url(raw)
+        result.append(escape_markdown(text[position:match.start()]))
+        result.append(f"<{url}>" if url else escape_markdown(raw))
+        result.append(escape_markdown(match.group()[len(raw):]))
+        position = match.end()
+    result.append(escape_markdown(text[position:]))
+    return "".join(result)
 
 
 class TextHTML(HTMLParser):
@@ -10,22 +49,59 @@ class TextHTML(HTMLParser):
         super().__init__()
         self.text = []
         self.hidden = 0
+        self.anchor = None
+
+    def finish_anchor(self):
+        if self.anchor is not None:
+            href, label = self.anchor
+            label = re.sub(r"\s+", " ", "".join(label)).strip()
+            url = link_url(href)
+            if url:
+                self.text.append(f"[{escape_markdown(label or href)}](<{url}>)")
+            else:
+                self.text.append(escape_markdown(label))
+            self.anchor = None
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style"):
             self.hidden += 1
+        if self.hidden:
+            return
+        if tag == "a":
+            self.finish_anchor()
+            self.anchor = (dict(attrs).get("href") or "", [])
+        if tag == "img":
+            self.handle_data(dict(attrs).get("alt") or "")
         if tag in ("br", "p", "div", "li", "tr") and not self.hidden:
-            self.text.append("\n")
+            if self.anchor is not None:
+                self.anchor[1].append(" ")
+            else:
+                self.text.append("\n")
 
     def handle_endtag(self, tag):
         if tag in ("script", "style") and self.hidden:
             self.hidden -= 1
+        if tag == "a" and not self.hidden:
+            self.finish_anchor()
         if tag in ("p", "div", "li", "tr") and not self.hidden:
-            self.text.append("\n")
+            if self.anchor is not None:
+                self.anchor[1].append(" ")
+            else:
+                self.text.append("\n")
 
     def handle_data(self, data):
         if not self.hidden:
-            self.text.append(data)
+            # HTML source indentation is whitespace, not a paragraph break.
+            data = re.sub(r"\s+", " ", data)
+            if self.anchor is not None:
+                self.anchor[1].append(data)
+            else:
+                self.text.append(markdown_text(data))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in ("br", "hr", "img", "input", "meta", "link"):
+            self.handle_endtag(tag)
 
 
 def headers(message):
@@ -44,8 +120,8 @@ def body_text(message, attachment_loader):
         if children:
             texts = [extract(p) for p in children]
             if part.get("mimeType") == "multipart/alternative":
-                plain = [t for p, t in zip(children, texts) if p.get("mimeType") == "text/plain" and t.strip()]
-                return plain[0] if plain else next((t for t in reversed(texts) if t.strip()), "")
+                rich = [t for p, t in zip(children, texts) if p.get("mimeType") == "text/html" and t.strip()]
+                return rich[0] if rich else next((t for t in texts if t.strip()), "")
             return "\n".join(t for t in texts if t)
         mime = part.get("mimeType", "")
         if mime not in ("text/plain", "text/html"):
@@ -67,14 +143,23 @@ def body_text(message, attachment_loader):
         if mime == "text/html":
             parser = TextHTML()
             parser.feed(text)
+            parser.close()
+            parser.finish_anchor()
             text = "".join(parser.text)
-        return text.strip()
-    return extract(message.get("payload", {})) or html.unescape(message.get("snippet", "")) or "（無文字內容）"
+        else:
+            text = markdown_text(text)
+        return clean_whitespace(text)
+    return clean_whitespace(extract(message.get("payload", {}))) or markdown_text(clean_whitespace(html.unescape(message.get("snippet", "")))) or "（無文字內容）"
 
 
-def chunks(text, limit):
+def chunks(text, limit, keep_links=False):
     result, current, size = [], [], 0
-    for char in text:
+    # Keep generated Markdown links together when they fit within one embed.
+    pattern = r'(\[(?:\\.|[^\]\\\n])*\]\(<https?://[^>\n]+>\)|<https?://[^>\n]+>)'
+    segments = re.split(pattern, text) if keep_links else [text]
+    tokens = (token for i, segment in enumerate(segments)
+              for token in ([segment] if keep_links and i % 2 and len(segment.encode("utf-16-le")) // 2 <= limit else segment))
+    for char in tokens:
         units = len(char.encode("utf-16-le")) // 2
         if size + units > limit:
             result.append("".join(current))
@@ -88,15 +173,14 @@ def chunks(text, limit):
 
 def payloads(account, message, text):
     h = headers(message)
-    # Escape Discord markdown and prevent mail text from creating mentions.
-    def safe(value):
-        return re.sub(r'([\\`*_~|>])', r'\\\1', value).replace("@", "@\u200b")
-    parts = chunks(safe(text), 4000)
-    title = chunks(safe(h.get("subject") or "（無主旨）"), 200)[0]
-    metadata = [("Gmail 帳號", account.email), ("寄件人", h.get("from", "（未知）")), ("收件人", h.get("to", "（未知）")), ("日期", h.get("date", "（未知）"))]
+    # body_text already escapes mail text and renders trusted Markdown links.
+    parts = chunks(clean_whitespace(text), 4000, keep_links=True)
+    title = chunks(escape_markdown(h.get("subject") or "（無主旨）"), 200)[0]
+    metadata = [("寄件人", h.get("from", "（未知）")), ("收件人", h.get("to", "（未知）"))]
+    date = chunks(clean_whitespace(h.get("date") or "（未知）"), 250)[0]
     for index, part in enumerate(parts, 1):
         embed = {"title": f"{title} ({index}/{len(parts)})", "description": part, "color": 0x4285F4,
-                 "footer": {"text": f"Gmail ID: {message['id']}"}}
+                 "footer": {"text": f"日期：{date}"}}
         if index == 1:
-            embed["fields"] = [{"name": name, "value": chunks(safe(value), 250)[0], "inline": False} for name, value in metadata]
+            embed["fields"] = [{"name": name, "value": chunks(escape_markdown(value), 250)[0], "inline": False} for name, value in metadata]
         yield {"embeds": [embed], "allowed_mentions": {"parse": []}}
